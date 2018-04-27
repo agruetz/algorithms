@@ -4,8 +4,17 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"runtime"
+	"sort"
 	"strconv"
+	"sync"
 )
+
+var limit = make(chan int, runtime.NumCPU())
+
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+}
 
 func merge(left, right []int, mid int) ([]int, int) {
 	arrayToReturn := make([]int, (len(left) + len(right)))
@@ -39,16 +48,62 @@ func merge(left, right []int, mid int) ([]int, int) {
 	return arrayToReturn, splitInv
 }
 
-func sort(arrayToCount []int) ([]int, int) {
+func sortArray(arrayToCount []int) ([]int, int) {
 	if len(arrayToCount) <= 1 {
 		return arrayToCount, 0
 	}
 	mid := (len(arrayToCount) / 2)
-	firstHalfSorted, invLeft := sort(arrayToCount[:mid])
-	secondHalfSorted, invRight := sort(arrayToCount[mid:])
+	firstHalfSorted, invLeft := sortArray(arrayToCount[:mid])
+	secondHalfSorted, invRight := sortArray(arrayToCount[mid:])
 	finalSorted, invSplit := merge(firstHalfSorted, secondHalfSorted, mid)
 
 	return finalSorted, (invLeft + invRight + invSplit)
+}
+
+func sortMulti(arrayToCount []int) ([]int, int) {
+	if len(arrayToCount) <= 1 {
+		return arrayToCount, 0
+	}
+	mid := (len(arrayToCount) / 2)
+
+	var firstHalfSorted, secondHalfSorted []int
+	var invLeft, invRight int
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	select {
+	case limit <- 1:
+		go func() {
+			firstHalfSorted, invLeft = sortMulti(arrayToCount[:mid])
+			<-limit
+			wg.Done()
+		}()
+	default:
+		firstHalfSorted, invLeft = sortArray(arrayToCount[:mid])
+		wg.Done()
+	}
+
+	select {
+	case limit <- 1:
+		go func() {
+			secondHalfSorted, invRight = sortMulti(arrayToCount[mid:])
+			<-limit
+			wg.Done()
+		}()
+	default:
+		secondHalfSorted, invRight = sortArray(arrayToCount[mid:])
+		wg.Done()
+	}
+
+	wg.Wait()
+
+	finalSorted, invSplit := merge(firstHalfSorted, secondHalfSorted, mid)
+
+	return finalSorted, (invLeft + invRight + invSplit)
+}
+
+func goSort(arrayToSort []int) {
+	sort.Ints(arrayToSort)
 }
 
 func main() {
@@ -70,6 +125,9 @@ func main() {
 		a = append(a, int)
 	}
 
-	_, i := sort(a)
+	_, i := sortArray(a)
+	fmt.Printf("Total Number of Inversions: %d\n", i)
+
+	_, i = sortMulti(a)
 	fmt.Printf("Total Number of Inversions: %d\n", i)
 }
